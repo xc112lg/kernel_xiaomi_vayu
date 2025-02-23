@@ -1,145 +1,292 @@
-#!/usr/bin/env bash
+#!/bin/bash
 #
-# Copyright (C) 2021 @alanndz (Telegram and Github)
-# SPDX-License-Identifier: GPL-3.0-or-later
+# Stock kernel for LG Electronics msm8996 devices build script by jcadduono
+# -(heavily)modified by stendro
 #
-# Script Build kernel for vayu or Poco X3 Pro
-# Credit to: Rama Bondan Prakoso (rama982)
+############################# BEFORE STARTING #############################
 #
+# download a working toolchain and extract it somewhere and configure this
+# file to point to the toolchain's root directory.
+#
+# once you've set up the config section how you like it, you can simply run
+# ./build.sh [VARIANT]
+#
+################################ VARIANTS ################################
+#
+# H850		= International (Global)
+#		LGH850   (LG G5)
+#
+# H830		= T-Mobile (US)
+#		LGH830   (LG G5)
+#
+# RS988		= Unlocked (US)
+#		LGRS988  (LG G5)
+#
+#   *************************
+#
+# H910		= AT&T (US)
+#		LGH910   (LG V20)
+#
+# H915		= Canada (CA)
+#		LGH915   (LG V20)
+#
+# H918		= T-Mobile (US)
+#		LGH918   (LG V20)
+#
+# US996		= US Cellular & Unlocked (US)
+#		LGUS996  (LG V20)
+#
+# US996D	= US Cellular & Unlocked (US)
+#		LGUS996  (LG V20) (Unlocked with Engineering Bootloader)
+#
+# VS995		= Verizon (US)
+#		LGVS995  (LG V20)
+#
+# H990DS	= International (Global)
+#		LGH990   (LG V20)
+#
+# H990TR	= Turkey (TR)
+#		LGH990   (LG V20)
+#
+# LS997		= Sprint (US)
+#		LGLS997  (LG V20)
+#
+# F800K/L/S	= Korea (KR)
+#		LGF800   (LG V20)
+#
+#   *************************
+#
+# H870		= International (Global)
+#		LGH870   (LG G6)
+#
+# US997		= US Cellular & Unlocked (US)
+#		US997    (LG G6)
+#
+# H872		= T-Mobile (US)
+#		LGH872   (LG G6)
+#
+################################# CONFIG #################################
+sudo apt update
+sudo apt install kmod -y
+#sudo -H apt-get install bc python2 ccache binutils-aarch64-linux-gnu cpio
 
-export TZ=":Asia/Jakarta"
+#sudo ln -s $(which python3) /usr/bin/python2
 
-if [[ ! -f Makefile ]]; then
-  echo "This not in rootdir kernel, please check directory again"
-  exit 1
+# Assume build_all is not being used, will be automatically changed if it is
+SINGLEBUILD="yes"
+
+# root directory of this kernel (this script's location)
+RDIR=$(pwd)
+
+# build dir
+BDIR=build
+
+# version file
+VFIL=VERSION
+
+# expand version
+VER=$(cat $RDIR/$VFIL)
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# ------------------------- BUILD CONFIG OPTIONS -------------------------
+#
+# "user"@"host"
+KBUSER=stendro_+_AShiningRay
+KBHOST=github
+
+# ccache: yes or no
+USE_CCACHE=no
+
+# select cpu threads
+THREADS=$(grep -c "processor" /proc/cpuinfo)
+
+# directory containing cross-compiler
+# a newer toolchain (gcc8+) is recommended due to changes made
+# to the kernel.
+GCC_COMP=$HOME/gcc-arm64/bin/aarch64-elf-
+# directory containing 32bit cross-compiler for CONFIG_COMPAT_VDSO
+GCC_COMP_32=$HOME/gcc-arm/bin/arm-eabi-
+
+# -------------------------------- END -----------------------------------
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#
+# compiler version
+# gnu gcc or newer arm (linaro) gcc
+if $(${GCC_COMP}gcc --version | grep -q '(GCC)') || 
+$(${GCC_COMP}gcc --version | grep -q '(Eva GCC)'); then
+	GCC_STRING=$(${GCC_COMP}gcc --version | head -n1 | cut -f2 -d')')
+	GCC_VER="GCC$GCC_STRING"
+else # old linaro gcc
+	GCC_VER="$(${GCC_COMP}gcc --version | head -n1 | cut -f1 -d')' | \
+	cut -f2 -d'(')"
+	
+	if $(echo $GCC_VER | grep -q '~dev'); then
+  		GCC_VER="$(echo $GCC_VER | cut -f1 -d'~')+"
+fi
 fi
 
-# Setup environment
-KDIR=$(pwd)
-TC="${KDIR}/.tools"
-AK=${TC}/AnyKernel
-KERNEL_NAME="Derp-KSU"
-KERNEL_TYPE="EAS"
-PHONE="Poco X3 Pro"
-DEVICE="vayu"
-CONFIG=${CONFIG:-vayu_defconfig}
-#CODENAME="-Testing"
-CHAT_ID="${CHAT_ID}"
-TOKEN="${TOKEN}"
-export KBUILD_BUILD_USER=Bagaskara
-export KBUILD_BUILD_HOST=DominatingMachine
-AK_BRANCH="vayu"
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# --------------------------- RIGID PORTION ------------------------------
+#
+# color codes
+COLOR_N="\033[0m"
+COLOR_R="\033[0;31m"
+COLOR_G="\033[1;32m"
+COLOR_Y="\033[1;33m"
+COLOR_P="\033[1;35m"
 
-if [[ ! -d $TC/clang || ! -d $TC/gcc64 || ! -d $TC/gcc32 ]]; then
-  git clone https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 --depth=1 --no-tags --single-branch -b master $TC/clang
-  git clone https://github.com/mvaisakh/gcc-arm64 --depth=1 --no-tags --single-branch $TC/gcc64
-  git clone https://github.com/mvaisakh/gcc-arm --depth=1 --no-tags --single-branch $TC/gcc32
+ABORT() {
+	echo -e $COLOR_R"Error: $*"
+	exit 1
+}
+
+
+
+
+
+export ARCH=arm64
+export KBUILD_BUILD_USER=$KBUSER
+export KBUILD_BUILD_HOST=$KBHOST
+export LOCALVERSION="-${VER}"
+if [ "$USE_CCACHE" = "yes" ]; then
+  export CROSS_COMPILE="ccache $GCC_COMP"
+  export CROSS_COMPILE_ARM32="ccache $GCC_COMP_32"
+else
+  export CROSS_COMPILE=$GCC_COMP
+  export CROSS_COMPILE_ARM32=$GCC_COMP_32
 fi
 
-if [[ ! -d ${AK} ]]; then
-  git clone https://github.com/bagaskara815/AnyKernel3 --no-tags --single-branch -b $AK_BRANCH ${AK}
+# In case a model isn't passed as an argument, this block acts as a fallback
+MODEL_ARRAY=("H850" "H830" "RS988" "H870" "US997" "H872" "H910" "H918" "H990" "LS997" "US996" "US996D" "VS995")
+FALLBACK_GET_VARIANT() {
+	if [[ ${SELECTED_MODEL} = "" ]]; then
+		echo -e "List of available variants:"
+		echo -e "G5  -> [$COLOR_C H850, H830, RS988 $COLOR_N]"
+		echo -e "G6  -> [$COLOR_C H870, US997, H872 $COLOR_N]"
+		echo -e "V20 -> [$COLOR_C H910, H918, H990, LS997, US996, US996D (Dirtysanta), VS995 $COLOR_N]"
+		read -p "Please select your model:" DEVICE
+	fi
+
+	# This checks if the user's model is supported by the kernel.
+	if [[ " ${MODEL_ARRAY[*]} " != *" ${DEVICE} "* ]];	then
+		echo -e "${COLOR_R}Your model wasn't found. Please check for errors (such as lower-case).${COLOR_N} \n"
+		FALLBACK_GET_VARIANT
+	fi
+}
+
+# selected device
+[ "$1" ] && DEVICE=$1
+[ "$DEVICE" ] || FALLBACK_GET_VARIANT
+
+# Checks if the build_all script isn't being used
+if [ "$2" = "build_all" ]; then
+    SINGLEBUILD="no"
+else
+    SINGLEBUILD="yes"
 fi
 
-# KernelSU
-git config --global user.email "bagaskara815@gmail.com"
-git config --global user.name "bagaskara815"
-curl https://gist.githubusercontent.com/bagaskara815/5aeb07f0d9031189871ffa362591b20f/raw/ksu.patch >> ksu.patch
-git am ksu.patch
-curl -LSs "https://raw.githubusercontent.com/rifsxd/KernelSU-Next/next/kernel/setup.sh" | bash -
+# link device name to lg config files
+COMMON_DEFCONFIG=vayu_defconfig
 
-# Setup name
-GIT="$(git log --pretty=format:'%h' -1)"
-ENDZ="${GIT}-$(date "+%d%m%Y-%H%M")"
-KVERSION="${CODENAME}-${GIT}"
-ZIP_NAME="${KERNEL_NAME}${CODENAME}-${DEVICE}-${ENDZ}.zip"
-LOG=$(echo ${ZIP_NAME} | sed "s/.zip/.log/")
-LOGE=$(echo ${ZIP_NAME} | sed "s/.zip/.error.log/")
 
-# Setup clang environment
-IMG="$KDIR/out/arch/arm64/boot/Image"
-DTBO="$KDIR/out/arch/arm64/boot/dtbo.img"
-DTB="$KDIR/out/arch/arm64/boot/dts/qcom"
-CL="$TC/clang/clang-r530567"
-export PATH="${CL}/bin:${TC}/gcc64/bin:${TC}/gcc32/bin:$PATH"
-export LD_LIBRARY_PATH="${CL}/lib:$LD_LIBRARY_PATH"
-KBUILD_COMPILER_STRING=$("${CL}/bin/clang" --version | head -n 1 | perl -pe 's/\(http.*?\)//gs' | sed -e 's/  */ /g' -e 's/[[:space:]]*$//')
-
-START=$(date +"%s")
-
-disable_lto() {
-  scripts/config --file out/.config -e CONFIG_THINLTO
-}
-
-enable_dtbo() {
-  scripts/config --file out/.config -e CONFIG_BUILD_ARM64_DTBO_IMG
-}
-
-m() {
-  make -j$(nproc --all) O=out \
-                        ARCH=arm64 \
-                        LOCALVERSION=${KVERSION} \
-                        CC="clang" \
-                        LLVM=1 \
-                        CLANG_TRIPLE=aarch64-elf- \
-                        CROSS_COMPILE=aarch64-elf- \
-                        CROSS_COMPILE_ARM32=arm-eabi- \
-                        ${ENV} \
-                        ${@}
-}
-
-m $CONFIG > /dev/null
-if [[ -z ${DISABLE_LTO} ]]; then
-  disable_lto
-fi
-enable_dtbo
-m > >(tee $KDIR/out/${LOG}) 2> >(tee $KDIRout/${LOGE} >&2)
-
-END=$(date +"%s")
-DIFF=$(($END - $START))
-
-sendInfo() {
-    curl -s -X POST https://api.telegram.org/bot$TOKEN/sendMessage -d chat_id=$CHAT_ID -d "parse_mode=HTML" -d text="$(
-            for POST in "${@}"; do
-                echo "${POST}"
-            done
-        )"
-&>/dev/null
-}
-
-sendInfo "<b>----- Nightly Kernel For Derp -----</b>" \
-	"<b>Device:</b> ${DEVICE} or ${PHONE}" \
-	"<b>Name:</b> <code>${KERNEL_NAME}${KVERSION}</code>" \
-	"<b>Kernel Version:</b> <code>$(make kernelversion)</code>" \
-	"<b>Type:</b> <code>${KERNEL_TYPE}</code>" \
-	"<b>Branch:</b> <code>$(git branch --show-current)</code>" \
-	"<b>Commit:</b> <code>$(git log --pretty=format:'%h : %s' -1)</code>" \
-	"<b>Started on:</b> <code>$(hostname)</code>" \
-	"<b>Compiler:</b> <code>${KBUILD_COMPILER_STRING}</code>"
-
-push() {
-  curl -F document=@"$1" "https://api.telegram.org/bot$TOKEN/sendDocument" \
-		-F chat_id="$CHAT_ID" \
-		-F "disable_web_page_preview=true" \
-		-F "parse_mode=html" \
-		-F caption="Build took $(($DIFF / 60)) minute(s) and $(($DIFF % 60)) second(s). | #Derp | <b>vayu</b>"
-}
-
-if [[ ! -f ${IMG} ]]; then
-  echo "Failed build!"
-  push out/${LOG}
-  push out/${LOGE}
-  exit 1
+if [ -f "$BDIR/DEVICE" ] && \
+	[ "$(cat $BDIR/DEVICE)" = "$DEVICE" ]; then
+	ASK_CLEAN=yes
 fi
 
-make -C ${AK} clean
-cp ${IMG} ${AK}
-cp ${DTBO} ${AK}
-find ${DTB} -name "*.dtb" -exec cat {} + > ${AK}/dtb
-make -C ${AK} ZIP="${ZIP_NAME}" normal
+# build commands
+CLEAN_BUILD() {
+	echo -e $COLOR_G"Cleaning build folder..."$COLOR_N
+	rm -rf $BDIR
+}
 
-push ${AK}/${ZIP_NAME}
-push out/${LOG}
-push out/arch/arm64/boot/Image
-push out/arch/arm64/boot/dtbo.img
-find out/arch/arm64/boot/dts/qcom -name "*.dtb" -exec cat {} + > ${KDIR}/out/arch/arm64/boot/dtb.img
-push out/arch/arm64/boot/dtb.img
+SETUP_BUILD() {
+	echo -e $COLOR_G"Creating kernel config..."$COLOR_N
+	mkdir -p $BDIR
+	echo "$DEVICE" > $BDIR/DEVICE \
+		|| echo -e $COLOR_R"Failed to reflect device!"
+    if [ $SINGLEBUILD = "yes" ]; then
+	    #ARCH=arm64 scripts/kconfig/merge_config.sh 
+	    make -C "$RDIR" O=$BDIR ARCH=arm64 CROSS_COMPILE=$CROSS_COMPILE $COMMON_DEFCONFIG \
+		    || ABORT "Failed to set up the kernel build."
+    else # build_all will send make output to a file
+        make -C "$RDIR" O=$BDIR $COMMON_DEFCONFIG $BOARD_DEFCONFIG $DEVICE_DEFCONFIG $SWAN2000_DEFCONFIG &> zBuild_all.log \
+		    || ABORT "Failed to set up the kernel build."
+    fi
+}
+
+BUILD_KERNEL() {
+	    echo -e $COLOR_G"Compiling kernel for ${DEVICE}..."$COLOR_N
+	    TIMESTAMP1=$(date +%s)
+    if [ $SINGLEBUILD = "yes" ]; then
+        
+		make -C "$RDIR" O=$BDIR -j"$THREADS" CROSS_COMPILE=$CROSS_COMPILE  KCFLAGS="-Wno-error" LDFLAGS="-maarch64elf"
+	
+    else # build_all will send compile logs to a file 
+	    while ! make -C "$RDIR" O=$BDIR -j"$THREADS" &> zBuild_all.log; do
+		    read -rp "Build failed. Retry? " do_retry
+		    case $do_retry in
+			    Y|y) continue ;;
+			    *) ABORT "Compilation aborted." ;;
+		    esac
+	    done
+    fi
+	    TIMESTAMP2=$(date +%s)
+	    BSEC=$((TIMESTAMP2-TIMESTAMP1))
+	    BTIME=$(printf '%02dm:%02ds' $(($BSEC/60)) $(($BSEC%60)))
+}
+
+
+
+INSTALL_MODULES() {
+	grep -q 'CONFIG_MODULES=y' $BDIR/.config || return 0
+	echo -e $COLOR_G"Installing kernel modules..."$COLOR_N
+    if [ $SINGLEBUILD = "yes" ]; then
+		echo "BDIR is set to: $BDIR"
+
+        make -C "$RDIR" O="$BDIR" \
+             INSTALL_MOD_PATH="$(realpath "$BDIR")" \
+             INSTALL_MOD_STRIP=1 \
+             modules_install
+    else # build_all will send module logs to a file
+        make -C "$RDIR" O=$BDIR \
+            INSTALL_MOD_PATH="$(realpath "$BDIR")" \
+            INSTALL_MOD_STRIP=1 \
+            modules_install &> zBuild_all.log
+    fi
+	#rm $BDIR/lib/modules/*/build $BDIR/lib/modules/*/source
+}
+
+PREPARE_NEXT() {
+	if grep -q 'CONFIG_KERNEL_LZ4=y' $BDIR/.config; then
+	  echo lz4 > $BDIR/COMPRESSION \
+		|| echo -e $COLOR_R"Failed to reflect compression method!"
+	else
+	  echo gz > $BDIR/COMPRESSION \
+		|| echo -e $COLOR_R"Failed to reflect compression method!"
+	fi
+	git log --oneline -50 > $BDIR/GITCOMMITS \
+		|| echo -e $COLOR_R"Failed to reflect commit log!"
+}
+
+cd "$RDIR" || ABORT "Failed to enter $RDIR!"
+
+
+# ask before cleaning if device
+# is the same as previous build
+if [ $SINGLEBUILD = "yes" ]; then
+   echo -e $COLOR_P"Run"
+    CLEAN_BUILD
+else # Always clean build folder for next build on build_all
+    CLEAN_BUILD
+fi
+CLEAN_BUILD
+SETUP_BUILD
+BUILD_KERNEL
+INSTALL_MODULES
+PREPARE_NEXT
+echo -e $COLOR_G"Finished building ${DEVICE} ${VER} -- Kernel compilation took"$COLOR_R $BTIME
+
+if [ $SINGLEBUILD = "yes" ]; then
+    echo -e $COLOR_P"Run './copy_finished.sh' to create the flashable AnyKernel zip."
+fi
